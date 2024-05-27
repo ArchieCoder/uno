@@ -195,6 +195,8 @@ namespace SamplesApp
 #endif
 			Private.Infrastructure.TestServices.WindowHelper.CurrentTestWindow =
 				_mainWindow;
+
+			_mainWindow.EnableHotReload();
 		}
 
 		private void SetupAndroidEnvironment()

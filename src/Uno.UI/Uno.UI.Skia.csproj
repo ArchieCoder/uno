@@ -97,6 +97,10 @@
 		</ProjectReference>
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Diagnostics\" />
+	</ItemGroup>
+
 	<Target Name="VS16Mac_RemoveSystemMemory" BeforeTargets="ResolveAssemblyReferences" Condition="$([MSBuild]::IsOsPlatform('OSX'))">
 		<!--
 				VS4Mac seems to process System.Memory differently, and removes

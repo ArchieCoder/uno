@@ -28,6 +28,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <UpToDateCheckInput Remove="Helpers\VersionHelper.cs" />
+	  <UpToDateCheckInput Remove="IClientProcessor.cs" />
+	  <UpToDateCheckInput Remove="RemoteControlOverlay.xaml.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<EmbeddedResource Include="LinkerDefinition.Wasm.xml">
 			<LogicalName>$(AssemblyName).xml</LogicalName>
 		</EmbeddedResource>
@@ -77,5 +83,11 @@
 		<Copy SourceFiles="@(_OutputFiles)" DestinationFiles="@(_OutputFiles->'$(_TargetNugetFolder)\%(RecursiveDir)%(Filename)%(Extension)')" />
 		<Copy SourceFiles="@(_OutputFilesPDB)" DestinationFiles="@(_OutputFilesPDB->'$(_TargetNugetFolder)\%(RecursiveDir)%(Filename).pdb')" />
 	</Target>
+
+	<ItemGroup>
+	  <Page Update="RemoteControlOverlay.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </Page>
+	</ItemGroup>
 
 </Project>

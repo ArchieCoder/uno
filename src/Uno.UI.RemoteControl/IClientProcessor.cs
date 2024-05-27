@@ -6,11 +6,20 @@ using Uno.UI.RemoteControl.HotReload.Messages;
 
 namespace Uno.UI.RemoteControl;
 
-internal interface IRemoteControlProcessor
+internal interface IClientProcessor
 {
 	string Scope { get; }
 
 	Task Initialize();
 
 	Task ProcessFrame(Frame frame);
+
+	//IEnumerable<ServerProcessor> GetRequired
 }
+
+internal interface IDiagnosticsSink
+{
+	void ReportInvalidFrame<TContent>(Frame frame);
+}
+
+internal sealed record ServerProcessor();

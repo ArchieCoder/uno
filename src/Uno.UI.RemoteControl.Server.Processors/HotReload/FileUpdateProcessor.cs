@@ -1,10 +1,12 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Uno.Extensions;
 using Uno.UI.RemoteControl.HotReload.Messages;
+using Uno.UI.RemoteControl.Messaging.IdeChannel;
 
 [assembly: Uno.UI.RemoteControl.Host.ServerProcessorAttribute(typeof(Uno.UI.RemoteControl.Host.HotReload.FileUpdateProcessor))]
 
@@ -19,7 +21,7 @@ partial class FileUpdateProcessor : IServerProcessor, IDisposable
 		_remoteControlServer = remoteControlServer;
 	}
 
-	public string Scope => HotReloadConstants.TestingScopeName;
+	public string Scope => WellKnownScopes.Testing;
 
 	public void Dispose()
 	{
@@ -36,6 +38,10 @@ partial class FileUpdateProcessor : IServerProcessor, IDisposable
 
 		return Task.CompletedTask;
 	}
+
+	/// <inheritdoc />
+	public Task Process(IdeMessage message, CancellationToken ct)
+		=> Task.CompletedTask;
 
 	private void ProcessUpdateFile(UpdateFile? message)
 	{

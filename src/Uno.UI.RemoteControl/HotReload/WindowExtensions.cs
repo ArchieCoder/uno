@@ -21,6 +21,6 @@ public static class WindowExtensions
 	/// </summary>
 	/// <param name="window">The window of the application to be updated</param>
 	/// <remarks>Currently this method doesn't use the window instance. However, with the addition of multi-window
-	/// support it's likely that the instance will be needed to deterine the window where updates will be applied</remarks>
-	public static void ForceHotReloadUpdate(this Window window) => ClientHotReloadProcessor.UpdateApplication(Array.Empty<Type>());
+	/// support it's likely that the instance will be needed to determine the window where updates will be applied</remarks>
+	public static void ForceHotReloadUpdate(this Window window) => ClientHotReloadProcessor.ForceHotReloadUpdate();
 }

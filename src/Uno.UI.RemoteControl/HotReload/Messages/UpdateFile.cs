@@ -19,7 +19,7 @@ public class UpdateFile : IMessage
 	public string NewText { get; set; } = string.Empty;
 
 	[JsonIgnore]
-	public string Scope => HotReloadConstants.TestingScopeName;
+	public string Scope => WellKnownScopes.Testing;
 
 	[JsonIgnore]
 	string IMessage.Name => Name;

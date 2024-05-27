@@ -1,6 +1,9 @@
-﻿using System;
+﻿#nullable enable
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using Newtonsoft.Json;
@@ -47,6 +50,20 @@ namespace Uno.UI.RemoteControl.HotReload.Messages
 				JsonConvert.SerializeObject(content)
 			);
 
+		public bool TryGetContent<T>([NotNullWhen(true)] out T? content)
+		{
+			try
+			{
+				content = JsonConvert.DeserializeObject<T>(Content);
+				return content is not null;
+			}
+			catch (Exception)
+			{
+				content = default;
+				return false;
+			}
+		}
+
 		public void WriteTo(Stream stream)
 		{
 			var writer = new BinaryWriter(stream, Encoding.UTF8);
@@ -56,5 +73,29 @@ namespace Uno.UI.RemoteControl.HotReload.Messages
 			writer.Write(Name);
 			writer.Write(Content);
 		}
+	}
+}
+
+
+namespace System.Diagnostics.CodeAnalysis
+{
+	/// <summary>
+	/// Specifies that when a method returns <see cref="ReturnValue"/>, the parameter will not be null even if the corresponding type allows it.
+	/// </summary>
+	[global::System.AttributeUsage(global::System.AttributeTargets.Parameter, Inherited = false)]
+	[global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+	internal sealed class NotNullWhenAttribute : global::System.Attribute
+	{
+		/// <summary>
+		/// Initializes the attribute with the specified return value condition.
+		/// </summary>
+		/// <param name="returnValue">The return value condition. If the method returns this value, the associated parameter will not be null.</param>
+		public NotNullWhenAttribute(bool returnValue)
+		{
+			ReturnValue = returnValue;
+		}
+
+		/// <summary>Gets the return value condition.</summary>
+		public bool ReturnValue { get; }
 	}
 }

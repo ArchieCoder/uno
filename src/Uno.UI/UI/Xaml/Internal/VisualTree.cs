@@ -73,11 +73,11 @@ namespace Uno.UI.Xaml.Core
 			_coreServices = coreServices ?? throw new ArgumentNullException(nameof(coreServices));
 			ContentRoot = contentRoot ?? throw new ArgumentNullException(nameof(contentRoot));
 
-			if (rootElement != null)
+			if (rootElement != null) // XAML island
 			{
 				RootElement = rootElement;
 			}
-			else
+			else // Core window
 			{
 				RootVisual = new RootVisual(coreServices);
 				RootVisual.AssociatedVisualTree = this;
@@ -204,8 +204,10 @@ namespace Uno.UI.Xaml.Core
 
 			EnsurePopupRoot();
 
-			//TODO Uno specific: We require some additional layers on top
+			// BEGIN UNO SPECIFIC:  We require some additional layers on top
+			EnsureDiagnosticsRoot();
 			EnsureFocusVisualRoot();
+			// END UNO SPECIFIC
 
 			//EnsurePrintRoot();
 			//EnsureTransitionRoot();
@@ -264,8 +266,10 @@ namespace Uno.UI.Xaml.Core
 			//AddRoot(_printRoot));
 			//AddRoot(_transitionRoot));
 
-			//TODO Uno specific: Focus visual layer
-			AddRoot(FocusVisualRoot);
+			// BEGIN UNO SPECIFIC
+			AddRoot(DiagnosticsRoot); // Layer for diagnostics indicators
+			AddRoot(FocusVisualRoot); //Focus visual layer
+			// END UNO SPECIFIC
 
 			//if (_pCoreNoRef.IsInBackgroundTask())
 			//{

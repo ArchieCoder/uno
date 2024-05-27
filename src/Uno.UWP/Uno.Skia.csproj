@@ -37,6 +37,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Folder Include="Diagnostics\" />
 	  <Folder Include="Storage\Pickers\Strings\en\" />
 	</ItemGroup>
 

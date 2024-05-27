@@ -13,7 +13,8 @@ namespace Uno.UI.Xaml.Core;
 internal partial class VisualTree : IWeakReferenceProvider
 {
 	private const int UnoTopZIndex = int.MaxValue - 100;
-	private const int FocusVisualZIndex = UnoTopZIndex + 1;
+	private const int DiagnosticsVisualZIndex = UnoTopZIndex + 1;
+	private const int FocusVisualZIndex = UnoTopZIndex + 2;
 
 	private ManagedWeakReference? _selfWeakReference;
 	private Windows.UI.ViewManagement.ApplicationView? _applicationView;
@@ -30,6 +31,22 @@ internal partial class VisualTree : IWeakReferenceProvider
 				IsHitTestVisible = false
 			};
 			Canvas.SetZIndex(FocusVisualRoot, FocusVisualZIndex);
+		}
+	}
+
+	public Panel? DiagnosticsRoot { get; private set; }
+
+	public void EnsureDiagnosticsRoot()
+	{
+		if (DiagnosticsRoot == null)
+		{
+			DiagnosticsRoot = new StackPanel()
+			{
+				Name = "DiagnosticsRoot",
+				Background = null,
+				Orientation = Orientation.Horizontal
+			};
+			Canvas.SetZIndex(DiagnosticsRoot, FocusVisualZIndex);
 		}
 	}
 

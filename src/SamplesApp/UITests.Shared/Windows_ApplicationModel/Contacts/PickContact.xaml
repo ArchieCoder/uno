@@ -68,7 +68,7 @@
 							<StackPanel>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Kind:" />
-									<Run Text="{x:Bind Kind}" />
+									<Run Text="{x:Bind Event}" />
 								</TextBlock>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Number:" />
@@ -90,7 +90,7 @@
 							<StackPanel>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Kind:" />
-									<Run Text="{x:Bind Kind}" />
+									<Run Text="{x:Bind Event}" />
 								</TextBlock>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Street address:" />
@@ -128,7 +128,7 @@
 							<StackPanel>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Kind:" />
-									<Run Text="{x:Bind Kind}" />
+									<Run Text="{x:Bind Event}" />
 								</TextBlock>
 								<TextBlock>
 									<Run FontWeight="Bold" Text="Address:" />

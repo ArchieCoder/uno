@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics.Contracts;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Runtime.Loader;
@@ -27,6 +29,7 @@ internal class RemoteControlServer : IRemoteControlServer, IDisposable
 	private readonly object _loadContextGate = new();
 	private static readonly Dictionary<string, (AssemblyLoadContext Context, int Count)> _loadContexts = new();
 	private readonly Dictionary<string, IServerProcessor> _processors = new();
+	private readonly CancellationTokenSource _ct = new();
 
 	private string? _resolveAssemblyLocation;
 	private WebSocket? _socket;
@@ -145,18 +148,13 @@ internal class RemoteControlServer : IRemoteControlServer, IDisposable
 			{
 				if (frame.Name == ProcessorsDiscovery.Name)
 				{
-					ProcessDiscoveryFrame(frame);
+					await ProcessDiscoveryFrame(frame);
 					continue;
 				}
 
 				if (frame.Name == KeepAliveMessage.Name)
 				{
-					if (this.Log().IsEnabled(LogLevel.Trace))
-					{
-						this.Log().LogTrace($"Client Keepalive frame");
-					}
-
-					await SendFrame(new KeepAliveMessage());
+					await ProcessPingFrame(frame);
 					continue;
 				}
 			}
@@ -182,132 +180,235 @@ internal class RemoteControlServer : IRemoteControlServer, IDisposable
 
 	private async Task TryStartIDEChannelAsync()
 	{
-		_ideChannelServer = await _ideChannelProvider.GetIdeChannelServerAsync();
-	}
-
-	private void ProcessDiscoveryFrame(Frame frame)
-	{
-		var msg = JsonConvert.DeserializeObject<ProcessorsDiscovery>(frame.Content)!;
-		var serverAssemblyName = typeof(IServerProcessor).Assembly.GetName().Name;
-
-		var assemblies = new List<System.Reflection.Assembly>();
-
-		_resolveAssemblyLocation = string.Empty;
-
-		if (!_appInstanceIds.Contains(msg.AppInstanceId))
+		if (_ideChannelServer is { } oldChannel)
 		{
-			_appInstanceIds.Add(msg.AppInstanceId);
+			oldChannel.MessageFromIDE += ProcessIdeMessage;
 		}
 
-		var assemblyLoadContext = GetAssemblyLoadContext(msg.AppInstanceId);
+		_ideChannelServer = await _ideChannelProvider.GetIdeChannelServerAsync();
 
-		// If BasePath is a specific file, try and load that
-		if (File.Exists(msg.BasePath))
+		if (_ideChannelServer is { } newChannel)
 		{
-			try
-			{
-				using var fs = File.Open(msg.BasePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-				assemblies.Add(assemblyLoadContext.LoadFromStream(fs));
+			newChannel.MessageFromIDE += ProcessIdeMessage;
+		}
+	}
 
-				_resolveAssemblyLocation = msg.BasePath;
-			}
-			catch (Exception exc)
+	private void ProcessIdeMessage(object? sender, IdeMessage message)
+	{
+		if (_processors.TryGetValue(message.Scope, out var processor))
+		{
+			if (this.Log().IsEnabled(LogLevel.Debug))
 			{
-				if (this.Log().IsEnabled(LogLevel.Error))
-				{
-					this.Log().LogError("Failed to load assembly {BasePath} : {Exc}", msg.BasePath, exc);
-				}
+				this.Log().LogDebug("Received message [{Scope} / {Name}] to be processed by {processor}", message.Scope, message.GetType().Name, processor);
+			}
+
+			var process = processor.Process(message, _ct.Token);
+
+			if (this.Log().IsEnabled(LogLevel.Error))
+			{
+				process = process.ContinueWith(
+					t => this.Log().LogError($"Failed to process message {message}: {t.Exception?.Flatten()}"),
+					_ct.Token,
+					TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.AttachedToParent,
+					TaskScheduler.Default);
 			}
 		}
 		else
 		{
-			// As BasePath is a directory, try and load processors from assemblies within that dir
-			var basePath = msg.BasePath.Replace('/', Path.DirectorySeparatorChar);
-
-#if NET8_0_OR_GREATER
-			basePath = Path.Combine(basePath, "net8.0");
-#elif NET7_0_OR_GREATER
-			basePath = Path.Combine(basePath, "net7.0");
-#endif
-
-			// Additional processors may not need the directory added immediately above.
-			if (!Directory.Exists(basePath))
+			if (this.Log().IsEnabled(LogLevel.Debug))
 			{
-				basePath = msg.BasePath;
+				this.Log().LogDebug("Unknown Frame [{Scope} / {Name}]", message.Scope, message.GetType().Name);
 			}
+		}
+	}
 
-			foreach (var file in Directory.GetFiles(basePath, "Uno.*.dll"))
+	private async Task ProcessPingFrame(Frame frame)
+	{
+		KeepAliveMessage pong;
+		if (frame.TryGetContent(out KeepAliveMessage? ping))
+		{
+			pong = new() { SequenceId = ping.SequenceId };
+
+			if (ping.AssemblyVersion != pong.AssemblyVersion && this.Log().IsEnabled(LogLevel.Warning))
 			{
-				if (Path.GetFileNameWithoutExtension(file).Equals(serverAssemblyName, StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
+				this.Log().LogTrace(
+					$"Client ping frame (a.k.a. KeepAlive), but version differs from server (server: {pong.AssemblyVersion} | client: {ping.AssemblyVersion})."
+					+ $"This usually indicates that an old instance of the dev-server is being re-used or a partial deployment of the application."
+					+ "Some feature like hot-reload are most likely to fail. To fix this, you might have to restart Visual Studio.");
+			}
+			else if (this.Log().IsEnabled(LogLevel.Trace))
+			{
+				this.Log().LogTrace($"Client ping frame (a.k.a. KeepAlive) with valid version ({ping.AssemblyVersion}).");
+			}
+		}
+		else
+		{
+			pong = new();
 
-				if (this.Log().IsEnabled(LogLevel.Debug))
-				{
-					this.Log().LogDebug("Discovery: Loading {File}", file);
-				}
-
-				try
-				{
-					assemblies.Add(assemblyLoadContext.LoadFromAssemblyPath(file));
-				}
-				catch (Exception exc)
-				{
-					// With additional processors there may be duplicates of assemblies already loaded
-					if (this.Log().IsEnabled(LogLevel.Debug))
-					{
-						this.Log().LogDebug("Failed to load assembly {File} : {Exc}", file, exc);
-					}
-				}
+			if (this.Log().IsEnabled(LogLevel.Warning))
+			{
+				this.Log().LogTrace(
+					"Client ping frame (a.k.a. KeepAlive), but failed to deserialize it's content. "
+					+ $"This usually indicates a version mismatch between client and server (server: {pong.AssemblyVersion})."
+					+ "Some feature like hot-reload are most likely to fail. To fix this, you might have to restart Visual Studio.");
 			}
 		}
 
-		foreach (var asm in assemblies)
+		await SendFrame(pong);
+	}
+
+	private async Task ProcessDiscoveryFrame(Frame frame)
+	{
+		var assemblies = new List<(string path, System.Reflection.Assembly assembly)>();
+		var discoveredProcessors = new List<DiscoveredProcessor>();
+		try
 		{
-			try
+			var msg = JsonConvert.DeserializeObject<ProcessorsDiscovery>(frame.Content)!;
+			var serverAssemblyName = typeof(IServerProcessor).Assembly.GetName().Name;
+
+			_resolveAssemblyLocation = string.Empty;
+
+			if (!_appInstanceIds.Contains(msg.AppInstanceId))
 			{
-				if (assemblies.Count > 1 || string.IsNullOrEmpty(_resolveAssemblyLocation))
+				_appInstanceIds.Add(msg.AppInstanceId);
+			}
+
+			var assemblyLoadContext = GetAssemblyLoadContext(msg.AppInstanceId);
+
+			// If BasePath is a specific file, try and load that
+			if (File.Exists(msg.BasePath))
+			{
+				try
 				{
-					_resolveAssemblyLocation = asm.Location;
+					using var fs = File.Open(msg.BasePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+					assemblies.Add((msg.BasePath, assemblyLoadContext.LoadFromStream(fs)));
+
+					_resolveAssemblyLocation = msg.BasePath;
+				}
+				catch (Exception exc)
+				{
+					if (this.Log().IsEnabled(LogLevel.Error))
+					{
+						this.Log().LogError("Failed to load assembly {BasePath} : {Exc}", msg.BasePath, exc);
+					}
+				}
+			}
+			else
+			{
+				// As BasePath is a directory, try and load processors from assemblies within that dir
+				var basePath = msg.BasePath.Replace('/', Path.DirectorySeparatorChar);
+
+#if NET8_0_OR_GREATER
+				basePath = Path.Combine(basePath, "net8.0");
+#elif NET7_0_OR_GREATER
+				basePath = Path.Combine(basePath, "net7.0");
+#endif
+
+				// Additional processors may not need the directory added immediately above.
+				if (!Directory.Exists(basePath))
+				{
+					basePath = msg.BasePath;
 				}
 
-				var attributes = asm.GetCustomAttributes(typeof(ServerProcessorAttribute), false);
-
-				foreach (var processorAttribute in attributes)
+				foreach (var file in Directory.GetFiles(basePath, "Uno.*.dll"))
 				{
-					if (processorAttribute is ServerProcessorAttribute processor)
+					if (Path.GetFileNameWithoutExtension(file).Equals(serverAssemblyName, StringComparison.OrdinalIgnoreCase))
 					{
+						continue;
+					}
+
+					if (this.Log().IsEnabled(LogLevel.Debug))
+					{
+						this.Log().LogDebug("Discovery: Loading {File}", file);
+					}
+
+					try
+					{
+						assemblies.Add((file, assemblyLoadContext.LoadFromAssemblyPath(file)));
+					}
+					catch (Exception exc)
+					{
+						// With additional processors there may be duplicates of assemblies already loaded
 						if (this.Log().IsEnabled(LogLevel.Debug))
 						{
-							this.Log().LogDebug("Discovery: Registering {ProcessorType}", processor.ProcessorType);
+							this.Log().LogDebug("Failed to load assembly {File} : {Exc}", file, exc);
 						}
+					}
+				}
+			}
 
-						if (asm.CreateInstance(processor.ProcessorType.FullName!, ignoreCase: false, bindingAttr: BindingFlags.Instance | BindingFlags.Public, binder: null, args: new[] { this }, culture: null, activationAttributes: null) is IServerProcessor serverProcessor)
-						{
-							RegisterProcessor(serverProcessor);
-						}
-						else
+			foreach (var asm in assemblies)
+			{
+				try
+				{
+					if (assemblies.Count > 1 || string.IsNullOrEmpty(_resolveAssemblyLocation))
+					{
+						_resolveAssemblyLocation = asm.path;
+					}
+
+					var attributes = asm.assembly.GetCustomAttributes(typeof(ServerProcessorAttribute), false);
+
+					foreach (var processorAttribute in attributes)
+					{
+						if (processorAttribute is ServerProcessorAttribute processor)
 						{
 							if (this.Log().IsEnabled(LogLevel.Debug))
 							{
-								this.Log().LogDebug("Failed to create server processor {ProcessorType}", processor.ProcessorType);
+								this.Log().LogDebug("Discovery: Registering {ProcessorType}", processor.ProcessorType);
+							}
+
+							try
+							{
+								if (asm.assembly.CreateInstance(processor.ProcessorType.FullName!, ignoreCase: false, bindingAttr: BindingFlags.Instance | BindingFlags.Public, binder: null, args: new[] { this }, culture: null, activationAttributes: null) is IServerProcessor serverProcessor)
+								{
+									discoveredProcessors.Add(new(asm.path, processor.ProcessorType.FullName!, VersionHelper.GetVersion(processor.ProcessorType), IsLoaded: true));
+									RegisterProcessor(serverProcessor);
+								}
+								else
+								{
+									discoveredProcessors.Add(new(asm.path, processor.ProcessorType.FullName!, VersionHelper.GetVersion(processor.ProcessorType), IsLoaded: false));
+									if (this.Log().IsEnabled(LogLevel.Debug))
+									{
+										this.Log().LogDebug("Failed to create server processor {ProcessorType}", processor.ProcessorType);
+									}
+								}
+							}
+							catch (Exception error)
+							{
+								discoveredProcessors.Add(new(asm.path, processor.ProcessorType.FullName!, VersionHelper.GetVersion(processor.ProcessorType), IsLoaded: false, LoadError: error.ToString()));
+								if (this.Log().IsEnabled(LogLevel.Error))
+								{
+									this.Log().LogError(error, "Failed to create server processor {ProcessorType}", processor.ProcessorType);
+								}
 							}
 						}
 					}
 				}
-			}
-			catch (Exception exc)
-			{
-				if (this.Log().IsEnabled(LogLevel.Error))
+				catch (Exception exc)
 				{
-					this.Log().LogError("Failed to create instance of server processor in  {Asm} : {Exc}", asm, exc);
+					if (this.Log().IsEnabled(LogLevel.Error))
+					{
+						this.Log().LogError("Failed to create instance of server processor in  {Asm} : {Exc}", asm, exc);
+					}
 				}
 			}
-		}
 
-		// Being thorough about trying to ensure everything is unloaded
-		assemblies.Clear();
+			// Being thorough about trying to ensure everything is unloaded
+			assemblies.Clear();
+		}
+		catch (Exception exc)
+		{
+			if (this.Log().IsEnabled(LogLevel.Error))
+			{
+				this.Log().LogError("Failed to process discovery frame: {Exc}", exc);
+			}
+		}
+		finally
+		{
+			await SendFrame(new ProcessorsDiscoveryResponse(
+				assemblies.Select(asm => asm.path).ToImmutableList(),
+				discoveredProcessors.ToImmutableList()));
+		}
 	}
 
 	public async Task SendFrame(IMessage message)
@@ -343,6 +444,8 @@ internal class RemoteControlServer : IRemoteControlServer, IDisposable
 
 	public void Dispose()
 	{
+		_ct.Cancel(false);
+
 		foreach (var processor in _processors)
 		{
 			processor.Value.Dispose();

@@ -374,6 +374,43 @@ internal class ProfilesObserver : IDisposable
 		}
 	}
 
+	public object? GetService(string typeName)
+	{
+		try
+		{
+			//var abc = ;
+			var type = Type.GetType(typeName);
+
+			if (typeof(MefExtensions).GetMethods().FirstOrDefault(m => m.Name == "GetService") is { } getServiceMethod)
+			{
+				var typedGetService = getServiceMethod.MakeGenericMethod(type);
+
+				if (_unconfiguredProject?.Services.ActiveConfiguredProjectProvider?.ActiveConfiguredProject?.Services.ExportProvider is { } prov1)
+				{
+					if (typedGetService.Invoke(null, [prov1, /*allow default*/false]) is { } inst)
+					{
+						return inst;
+					}
+				}
+
+				if (_unconfiguredProject?.Services.ActiveConfiguredProjectProvider?.ActiveConfiguredProject?.Services.ProjectService.Services.ExportProvider is { } prov2)
+				{
+					if (typedGetService.Invoke(null, [prov2, /*allow default*/false]) is { } inst)
+					{
+						return inst;
+					}
+				}
+			}
+
+			return null;
+		}
+		catch (Exception e)
+		{
+			_debugLog($"Failed to get service {e}");
+			return null;
+		}
+	}
+
 	public void Dispose()
 	{
 		_projectRuleSubscriptionLink?.Dispose();

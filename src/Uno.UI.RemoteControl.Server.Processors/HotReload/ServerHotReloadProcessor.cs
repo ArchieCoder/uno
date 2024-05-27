@@ -11,6 +11,7 @@ using Newtonsoft.Json;
 using Uno.Disposables;
 using Uno.Extensions;
 using Uno.UI.RemoteControl.HotReload.Messages;
+using Uno.UI.RemoteControl.Messaging.IdeChannel;
 
 [assembly: Uno.UI.RemoteControl.Host.ServerProcessorAttribute(typeof(Uno.UI.RemoteControl.Host.HotReload.ServerHotReloadProcessor))]
 
@@ -27,7 +28,7 @@ namespace Uno.UI.RemoteControl.Host.HotReload
 			_remoteControlServer = remoteControlServer;
 		}
 
-		public string Scope => HotReloadConstants.HotReload;
+		public string Scope => WellKnownScopes.HotReload;
 
 		public Task ProcessFrame(Frame frame)
 		{
@@ -42,6 +43,17 @@ namespace Uno.UI.RemoteControl.Host.HotReload
 			}
 
 			return Task.CompletedTask;
+		}
+
+		/// <inheritdoc />
+		public async Task Process(IdeMessage message, CancellationToken ct)
+		{
+			switch (message)
+			{
+				case HotReloadEventIdeMessage evt:
+					_remoteControlServer.SendFrame()
+					break;
+			}
 		}
 
 		private void ProcessXamlLoadError(XamlLoadError xamlLoadError)
@@ -117,7 +129,7 @@ namespace Uno.UI.RemoteControl.Host.HotReload
 								Path.GetExtension(f).Equals(".xaml", StringComparison.OrdinalIgnoreCase)
 								|| Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase));
 
-						foreach (var file in filePaths)
+						foreach (var file in files)
 						{
 							OnSourceFileChanged(file);
 						}

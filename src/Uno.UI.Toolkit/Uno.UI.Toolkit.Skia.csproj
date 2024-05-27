@@ -3,7 +3,7 @@
 		<TargetFrameworks>$(NetSkiaPreviousAndCurrent)</TargetFrameworks>
 	</PropertyGroup>
 
-	<Import Project="../targetframework-override.props"/>
+	<Import Project="../targetframework-override.props" />
 
 	<PropertyGroup>
 		<AssemblyName>Uno.UI.Toolkit</AssemblyName>
@@ -20,6 +20,7 @@
 
 		<UseCommonOverridePackage>true</UseCommonOverridePackage>
 		<CommonOverridePackageId>Uno.UI</CommonOverridePackageId>
+		<NoWarn>$(NoWarn);CS1998</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

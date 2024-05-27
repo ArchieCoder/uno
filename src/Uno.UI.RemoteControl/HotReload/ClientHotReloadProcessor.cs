@@ -12,10 +12,11 @@ using Uno.UI.RemoteControl.HotReload.Messages;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
+using Frame = Uno.UI.RemoteControl.HotReload.Messages.Frame;
 
 namespace Uno.UI.RemoteControl.HotReload;
 
-public partial class ClientHotReloadProcessor : IRemoteControlProcessor
+public partial class ClientHotReloadProcessor : IClientProcessor
 {
 	private string? _projectPath;
 	private string[]? _xamlPaths;
@@ -24,6 +25,15 @@ public partial class ClientHotReloadProcessor : IRemoteControlProcessor
 
 	private Dictionary<string, string>? _msbuildProperties;
 
+
+	private IDiagnosticsSink _diagnostics = null!;
+	private interface IDiagnosticsSink
+	{
+		void ReportInvalidFrame<TContent>(Frame frame);
+
+
+	}
+
 	public ClientHotReloadProcessor(IRemoteControlClient rcClient)
 	{
 		_rcClient = rcClient;
@@ -31,7 +41,7 @@ public partial class ClientHotReloadProcessor : IRemoteControlProcessor
 
 	partial void InitializeMetadataUpdater();
 
-	string IRemoteControlProcessor.Scope => HotReloadConstants.HotReload;
+	string IClientProcessor.Scope => WellKnownScopes.HotReload;
 
 	public async Task Initialize()
 		=> await ConfigureServer();
@@ -41,7 +51,14 @@ public partial class ClientHotReloadProcessor : IRemoteControlProcessor
 		switch (frame.Name)
 		{
 			case AssemblyDeltaReload.Name:
-				AssemblyReload(JsonConvert.DeserializeObject<HotReload.Messages.AssemblyDeltaReload>(frame.Content)!);
+				if (frame.TryGetContent(out HotReload.Messages.AssemblyDeltaReload? assemblyDeltaReload))
+				{
+					AssemblyReload(assemblyDeltaReload);
+				}
+				else
+				{
+					_diagnostics.ReportInvalidFrame<HotReload.Messages.AssemblyDeltaReload>(frame);
+				}
 				break;
 
 			case FileReload.Name:
