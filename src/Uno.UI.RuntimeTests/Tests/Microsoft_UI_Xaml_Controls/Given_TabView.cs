@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Windows.UI.Input.Preview.Injection;
-using Microsoft.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls;
 
 using Private.Infrastructure;
 using Uno.Extensions;
